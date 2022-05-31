@@ -1,41 +1,43 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/xeasy/nami"
-	"github.com/xeasy/nami/codec"
+	"github.com/xeasy/nami/client"
 )
 
 func main() {
 	addr := make(chan string)
 	go startServer(addr)
 
-	conn, _ := net.Dial("tcp", <-addr)
-
-	defer func() { conn.Close() }()
+	client, _ := client.Dial("tcp", <-addr)
+	defer func() { client.Close() }()
 
 	time.Sleep(time.Second)
 
-	// send options
-	json.NewEncoder(conn).Encode(nami.DefaultOption)
-	cc := codec.NewGobCodec(conn)
+	// send & receive
+	var wg sync.WaitGroup
 
-	// send request & recive
 	for i := 0; i < 5; i++ {
-		h := &codec.Header{
-			ServiceMethod: "Go.South",
-			Seq:           uint64(i),
-		}
-		cc.Write(h, fmt.Sprintf("rpc req %d", h.Seq))
-		cc.ReadHeader(h)
-		var reply string
-		cc.ReadBody(&reply)
-		fmt.Println("reply:", reply)
+		wg.Add(1)
+
+		go func(i int) {
+			defer wg.Done()
+			args := fmt.Sprintf("rpc req %d", i)
+			var reply string
+			if err := client.Call("Go.south", args, &reply); err != nil {
+				fmt.Println("call Go.south fail: ", err)
+				return
+			}
+			fmt.Println("reply: ", reply)
+		}(i)
 	}
+
+	wg.Wait()
 }
 
 func startServer(addr chan string) {
