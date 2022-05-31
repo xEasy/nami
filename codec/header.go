@@ -2,6 +2,6 @@ package codec
 
 type Header struct {
 	ServiceMethod string
-	seq           uint64
+	Seq           uint64
 	Error         string
 }
