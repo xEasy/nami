@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,7 +252,13 @@ func (c *Client) Go(serviceMethod string, args any, reply any, done chan *Call) 
 	return call
 }
 
-func (c *Client) Call(serviceMethod string, args any, reply any) error {
-	call := <-c.Go(serviceMethod, args, reply, make(chan *Call, 1)).Done
-	return call.Error
+func (c *Client) Call(ctx context.Context, serviceMethod string, args any, reply any) error {
+	call := c.Go(serviceMethod, args, reply, make(chan *Call, 1))
+	select {
+	case <-ctx.Done():
+		c.removeCall(call.Seq)
+		return errors.New("rpc client: call failed: " + ctx.Err().Error())
+	case call := <-call.Done:
+		return call.Error
+	}
 }
