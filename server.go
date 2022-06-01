@@ -2,11 +2,11 @@ package nami
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -15,12 +15,16 @@ import (
 
 type request struct {
 	h            *codec.Header
+	svc          *service
+	mtype        *methodType
 	argv, replyv reflect.Value
 }
 
 type NServer interface {
 	Accept(lis net.Listener)
 	ServeConn(conn io.ReadWriteCloser)
+	Regiest(rcvr any) error
+	findService(serviceMethod string) (svc *service, mtype *methodType)
 	serveCodec(cc codec.Codec)
 	readRequestHeader(cc codec.Codec) (h *codec.Header, err error)
 	readRequest(cc codec.Codec) (*request, error)
@@ -29,7 +33,9 @@ type NServer interface {
 }
 
 // Server represents an RPC Server.
-type Server struct{}
+type Server struct {
+	serviceMap sync.Map
+}
 
 var DefaultServer *Server
 var invalidRequest = struct{}{}
@@ -45,6 +51,40 @@ func NewServer() *Server {
 
 func Accept(l net.Listener) {
 	DefaultServer.Accept(l)
+}
+
+func (s *Server) Regiest(rcvr any) error {
+	service := newService(rcvr)
+	if _, dup := s.serviceMap.LoadOrStore(service.name, service); dup {
+		return errors.New("rpc server: service regiest fail, already defined: " + service.name)
+	}
+	return nil
+}
+
+func Regiest(rcvr any) error {
+	return DefaultServer.Regiest(rcvr)
+}
+
+func (s *Server) findService(serviceMethod string) (svc *service, mtype *methodType, err error) {
+	dot := strings.LastIndex(serviceMethod, ".")
+	if dot < 0 {
+		err = errors.New("rpc server: service/method request ill-formed: " + serviceMethod)
+		return
+	}
+	serviceName, methodName := serviceMethod[:dot], serviceMethod[dot+1:]
+	svcIntface, ok := s.serviceMap.Load(serviceName)
+	if !ok {
+		err = errors.New("rpc server: can't find service " + serviceName)
+		return
+	}
+
+	svc = svcIntface.(*service)
+	mtype = svc.method[methodName]
+	if mtype == nil {
+		err = errors.New("rpc server: can't find method " + methodName)
+		return
+	}
+	return
 }
 
 func (s *Server) Accept(lis net.Listener) {
@@ -103,9 +143,21 @@ func (s *Server) readRequest(cc codec.Codec) (*request, error) {
 		return nil, err
 	}
 	req := &request{h: h}
-	req.argv = reflect.New(reflect.TypeOf(""))
-	if err = cc.ReadBody(req.argv.Interface()); err != nil {
-		fmt.Println("rpc server: read argv err: ", err)
+	req.svc, req.mtype, err = s.findService(h.ServiceMethod)
+	if err != nil {
+		return req, err
+	}
+	req.argv = req.mtype.newArgv()
+	req.replyv = req.mtype.newReplyv()
+
+	// make sure that argvi is a pointer, Readbody need a pointer as parameter
+	argvi := req.argv.Interface()
+	if req.argv.Type().Kind() != reflect.Ptr {
+		argvi = req.argv.Addr().Interface()
+	}
+	if err = cc.ReadBody(argvi); err != nil {
+		fmt.Println("rcp server: read body fail: ", err)
+		return req, err
 	}
 	return req, nil
 }
@@ -124,8 +176,12 @@ func (s *Server) readRequestHeader(cc codec.Codec) (*codec.Header, error) {
 func (s *Server) handleRequest(cc codec.Codec, req *request, sending *sync.Mutex, wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	fmt.Println(req.h, req.argv.Elem())
-	req.replyv = reflect.ValueOf(strings.Join([]string{"rpc resp", strconv.Itoa(int(req.h.Seq))}, ""))
+	err := req.svc.call(req.mtype, req.argv, req.replyv)
+	if err != nil {
+		req.h.Error = err.Error()
+		s.sendResponse(cc, req.h, invalidRequest, sending)
+		return
+	}
 	s.sendResponse(cc, req.h, req.replyv.Interface(), sending)
 }
 
