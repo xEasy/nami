@@ -117,10 +117,10 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 		fmt.Println("rpc server: invalid codec type : ", opt.CodecType)
 		return
 	}
-	s.serveCodec(codecFunc(conn))
+	s.serveCodec(codecFunc(conn), &opt)
 }
 
-func (s *Server) serveCodec(cc codec.Codec) {
+func (s *Server) serveCodec(cc codec.Codec, opt *Option) {
 	var sending sync.Mutex
 	var wg sync.WaitGroup
 	for {
@@ -134,7 +134,7 @@ func (s *Server) serveCodec(cc codec.Codec) {
 			s.sendResponse(cc, req.h, invalidRequest, &sending)
 		}
 		wg.Add(1)
-		go s.handleRequest(cc, req, &sending, &wg)
+		go s.handleRequest(cc, req, &sending, &wg, opt.HandleTimeout)
 	}
 }
 
