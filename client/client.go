@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/xeasy/nami"
 	"github.com/xeasy/nami/codec"
@@ -87,21 +88,41 @@ func parseOptions(opts ...*nami.Option) (*nami.Option, error) {
 	return opt, nil
 }
 
+type clientResult struct {
+	client NClient
+	err    error
+}
+
 func Dial(nw, addr string, opts ...*nami.Option) (NClient, error) {
 	opt, err := parseOptions(opts...)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := net.Dial(nw, addr)
+	conn, err := net.DialTimeout(nw, addr, opt.ConnectionTimeout)
 	if err != nil {
 		return nil, err
 	}
 
-	client, err := NewClient(conn, opt)
-	if client == nil {
-		conn.Close()
+	ch := make(chan clientResult)
+	go func() {
+		client, err := NewClient(conn, opt)
+		if client == nil {
+			conn.Close()
+		}
+		ch <- clientResult{client, err}
+	}()
+
+	if opt.ConnectionTimeout == 0 {
+		result := <-ch
+		return result.client, result.err
 	}
-	return client, err
+
+	select {
+	case <-time.After(opt.ConnectionTimeout):
+		return nil, fmt.Errorf("rpc client: connect timeout: expect within %s", opt.ConnectionTimeout)
+	case result := <-ch:
+		return result.client, result.err
+	}
 }
 
 func (client *Client) Close() error {
