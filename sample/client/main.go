@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -23,7 +24,8 @@ func main() {
 		go func(i int) {
 			defer wg.Done()
 			var reply int
-			if err := client.Call("Foo.Sum", &struct{ Num1, Num2 int }{i, i * i}, &reply); err != nil {
+			ctx := context.Background()
+			if err := client.Call(ctx, "Foo.Sum", &struct{ Num1, Num2 int }{i, i * i}, &reply); err != nil {
 				fmt.Println("call Go.south fail: ", err)
 				return
 			}

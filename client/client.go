@@ -22,7 +22,7 @@ type NClient interface {
 	removeCall(seq uint64) *Call
 	terminateCalls(err error)
 	Go(serviceMethod string, args, reply any, done chan *Call) *Call
-	Call(serviceMethod string, args, reply any) error
+	Call(ctx context.Context, serviceMethod string, args, reply any) error
 	IsAvailable() bool
 }
 
