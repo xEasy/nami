@@ -1,18 +1,28 @@
 package client
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/xeasy/nami"
 	"github.com/xeasy/nami/codec"
 )
+
+type newClientFunc func(conn net.Conn, opt *nami.Option) (NClient, error)
+
+type clientResult struct {
+	client NClient
+	err    error
+}
 
 type NClient interface {
 	io.Closer
@@ -39,6 +49,23 @@ type Client struct {
 }
 
 var ErrShutdown = errors.New("connection is shut down")
+
+func NewHTTPClient(conn net.Conn, opt *nami.Option) (NClient, error) {
+	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", nami.DefaultRPCPath))
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
+	fmt.Println("resp", err)
+	if err != nil {
+		err = errors.New("unexpected HTTP response: " + err.Error())
+	}
+	if err == nil || resp.Status == nami.Connected {
+		return NewClient(conn, opt)
+	}
+	if err == nil {
+		err = errors.New("unexpected HTTP response: " + err.Error())
+	}
+	return nil, err
+}
 
 func NewClient(conn net.Conn, opt *nami.Option) (NClient, error) {
 	f := codec.NewCodecFuncMap[opt.CodecType]
@@ -89,12 +116,30 @@ func parseOptions(opts ...*nami.Option) (*nami.Option, error) {
 	return opt, nil
 }
 
-type clientResult struct {
-	client NClient
-	err    error
+// rpcAddr eg, http@10.0.0.1:7001, tcp@10.0.0.1:9999, unix@/tmp/geerpc.sock
+func XDial(rpcAddr string, opts ...*nami.Option) (NClient, error) {
+	parts := strings.Split(rpcAddr, "@")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("rpc client: wrong addr format %s, expect protool@address", rpcAddr)
+	}
+	protool, addr := parts[0], parts[1]
+	switch protool {
+	case "http":
+		return DialHTTP("tcp", addr, opts...)
+	default:
+		return Dial(protool, addr, opts...)
+	}
 }
 
 func Dial(nw, addr string, opts ...*nami.Option) (NClient, error) {
+	return dialTimeout(NewClient, nw, addr, opts...)
+}
+
+func DialHTTP(nw, addr string, opts ...*nami.Option) (NClient, error) {
+	return dialTimeout(NewHTTPClient, nw, addr, opts...)
+}
+
+func dialTimeout(ncFunc newClientFunc, nw, addr string, opts ...*nami.Option) (NClient, error) {
 	opt, err := parseOptions(opts...)
 	if err != nil {
 		return nil, err
@@ -106,7 +151,7 @@ func Dial(nw, addr string, opts ...*nami.Option) (NClient, error) {
 
 	ch := make(chan clientResult)
 	go func() {
-		client, err := NewClient(conn, opt)
+		client, err := ncFunc(conn, opt)
 		if client == nil {
 			conn.Close()
 		}

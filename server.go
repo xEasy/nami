@@ -6,12 +6,19 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/xeasy/nami/codec"
+)
+
+const (
+	Connected        = "200 OK Connected to Nami RPC"
+	DefaultRPCPath   = "/_namirpc_"
+	DefaultDebugPath = "/debug/namirpc"
 )
 
 type request struct {
@@ -52,6 +59,33 @@ func NewServer() *Server {
 
 func Accept(l net.Listener) {
 	DefaultServer.Accept(l)
+}
+
+func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "CONNECT" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		_, _ = io.WriteString(w, "405 must CONNECT\n")
+		return
+	}
+	conn, _, err := w.(http.Hijacker).Hijack()
+	if err != nil {
+		fmt.Println("rpc server: rpc Hijack err:", err)
+		return
+	}
+	_, _ = io.WriteString(conn, "HTTP/1.0 "+Connected+"\n\n")
+	s.ServeConn(conn)
+	return
+}
+
+func (s *Server) HandleHTTP() {
+	http.Handle(DefaultRPCPath, s)
+	http.Handle(DefaultDebugPath, debugHTTP{s})
+	fmt.Printf("rpc server debug path: %s \n", DefaultDebugPath)
+}
+
+func HandleHTTP() {
+	DefaultServer.HandleHTTP()
 }
 
 func (s *Server) Regiest(rcvr any) error {
@@ -103,7 +137,7 @@ func (s *Server) ServeConn(conn io.ReadWriteCloser) {
 
 	var opt Option
 	if err := json.NewDecoder(conn).Decode(&opt); err != nil {
-		fmt.Println("rcp server: options error: ", err)
+		fmt.Println("rcp server: get options error: ", err)
 		return
 	}
 

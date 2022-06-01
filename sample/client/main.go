@@ -4,16 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/xeasy/nami/client"
 )
 
 func main() {
-	client, _ := client.Dial("tcp", "127.0.0.1:8999")
+	client, _ := client.DialHTTP("tcp", "127.0.0.1:8999")
 	defer func() { client.Close() }()
-
-	time.Sleep(time.Second)
 
 	// send & receive
 	var wg sync.WaitGroup

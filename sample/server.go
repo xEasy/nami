@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"net"
+	"net/http"
 
 	"github.com/xeasy/nami"
 )
@@ -32,6 +32,6 @@ func startServer() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("start rpc server on", l.Addr())
-	nami.Accept(l)
+	nami.HandleHTTP()
+	http.Serve(l, nil)
 }
