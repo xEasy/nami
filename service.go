@@ -39,8 +39,6 @@ func (s *service) registMethods() {
 		}
 
 		// skip if method not return error
-		fmt.Println(mType.Out(0).Kind().String())
-
 		if mType.Out(0) != reflect.TypeOf((*error)(nil)).Elem() {
 			continue
 		}

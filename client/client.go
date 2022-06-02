@@ -54,7 +54,6 @@ func NewHTTPClient(conn net.Conn, opt *nami.Option) (NClient, error) {
 	_, _ = io.WriteString(conn, fmt.Sprintf("CONNECT %s HTTP/1.0\n\n", nami.DefaultRPCPath))
 
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
-	fmt.Println("resp", err)
 	if err != nil {
 		err = errors.New("unexpected HTTP response: " + err.Error())
 	}
