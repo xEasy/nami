@@ -23,9 +23,10 @@ var _ io.Closer = (*XClient)(nil)
 
 func NewXClient(d Discovery, mode SelectMode, opt *nami.Option) *XClient {
 	return &XClient{
-		d:    d,
-		mode: mode,
-		opt:  opt,
+		d:       d,
+		mode:    mode,
+		opt:     opt,
+		clients: make(map[string]client.NClient),
 	}
 }
 
@@ -110,5 +111,7 @@ func (xc *XClient) Broadcast(ctx context.Context, serviceMethod string, args, re
 		}(rpcAddr)
 	}
 	wg.Wait()
+	// avoid context leak
+	cancel()
 	return e
 }
