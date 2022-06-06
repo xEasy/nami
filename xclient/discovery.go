@@ -74,7 +74,7 @@ func (m *MultiServersDiscovery) GetAll() ([]string, error) {
 	return servers, nil
 }
 
-func NewMultiServersDiscovery(servers []string) Discovery {
+func NewMultiServersDiscovery(servers []string) *MultiServersDiscovery {
 	d := &MultiServersDiscovery{
 		servers: servers,
 		r:       rand.New(rand.NewSource(time.Now().UnixNano())),
