@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/xeasy/nami"
+	"github.com/xeasy/nami/registry"
 	"github.com/xeasy/nami/xclient"
 )
 
@@ -25,12 +27,13 @@ func (f Foo) Sleep(args Args, reply *int) error {
 	return nil
 }
 
-func startServer(addrCh chan string) {
+func startServer(registryAddr string, wg *sync.WaitGroup) {
 	var foo Foo
 	l, _ := net.Listen("tcp", ":0")
 	server := nami.NewServer()
 	server.Regiest(&foo)
-	addrCh <- l.Addr().String()
+	registry.Heartbeat(registryAddr, "tcp@"+l.Addr().String(), 0)
+	wg.Done()
 	server.Accept(l)
 }
 
@@ -50,8 +53,8 @@ func foo(xc *xclient.XClient, ctx context.Context, typ, serviceMethod string, ar
 	}
 }
 
-func call(addr1, addr2 string) {
-	d := xclient.NewMultiServersDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func call(regiest string) {
+	d := xclient.NewRegistryDiscovery(regiest, 0)
 	xc := xclient.NewXClient(d, xclient.RandomSelect, nil)
 	defer func() {
 		xc.Close()
@@ -68,8 +71,8 @@ func call(addr1, addr2 string) {
 	wg.Wait()
 }
 
-func broadcast(addr1, addr2 string) {
-	d := xclient.NewMultiServersDiscovery([]string{"tcp@" + addr1, "tcp@" + addr2})
+func broadcast(regiestry string) {
+	d := xclient.NewRegistryDiscovery(regiestry, 0)
 	xc := xclient.NewXClient(d, xclient.RandomSelect, nil)
 	defer func() {
 		xc.Close()
@@ -89,17 +92,27 @@ func broadcast(addr1, addr2 string) {
 	wg.Wait()
 }
 
+func startRegistry(wg *sync.WaitGroup) {
+	l, _ := net.Listen("tcp", ":9999")
+	registry.HandlHTTP()
+	wg.Done()
+	_ = http.Serve(l, nil)
+}
+
 func main() {
-	ch1 := make(chan string)
-	ch2 := make(chan string)
+	regiestryAddr := "http://localhost:9999/_namirpc_/regiestry"
 
-	go startServer(ch1)
-	go startServer(ch2)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go startRegistry(&wg)
+	wg.Wait()
 
-	addr1 := <-ch1
-	addr2 := <-ch2
+	wg.Add(2)
+	go startServer(regiestryAddr, &wg)
+	go startServer(regiestryAddr, &wg)
+	wg.Wait()
 
 	time.Sleep(time.Second)
-	call(addr1, addr2)
-	broadcast(addr1, addr2)
+	call(regiestryAddr)
+	broadcast(regiestryAddr)
 }
