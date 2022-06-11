@@ -1,4 +1,4 @@
-package regiestry
+package registry
 
 import (
 	"fmt"

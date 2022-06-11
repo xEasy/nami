@@ -1,4 +1,4 @@
-package regiestry
+package registry
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ type ServerItem struct {
 	start time.Time
 }
 
-type Regiestry struct {
+type Registry struct {
 	timeout time.Duration
 	mu      sync.Mutex
 	servers map[string]*ServerItem
@@ -26,8 +26,8 @@ const (
 	defaultTimeout = time.Second * 300
 )
 
-func New(time time.Duration) *Regiestry {
-	return &Regiestry{
+func New(time time.Duration) *Registry {
+	return &Registry{
 		timeout: time,
 		servers: make(map[string]*ServerItem),
 	}
@@ -35,7 +35,7 @@ func New(time time.Duration) *Regiestry {
 
 var DefaultRegiestry = New(defaultTimeout)
 
-func (r *Regiestry) putServer(addr string) {
+func (r *Registry) putServer(addr string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	s := r.servers[addr]
@@ -46,7 +46,7 @@ func (r *Regiestry) putServer(addr string) {
 	}
 }
 
-func (r *Regiestry) aliveServers() []string {
+func (r *Registry) aliveServers() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var alive []string
@@ -61,7 +61,7 @@ func (r *Regiestry) aliveServers() []string {
 	return alive
 }
 
-func (r *Regiestry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch req.Method {
 	case "GET":
 		w.Header().Set("X-Namirpc-Servers", strings.Join(r.aliveServers(), ","))
@@ -77,7 +77,7 @@ func (r *Regiestry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Regiestry) HandlHTTP(registryPath string) {
+func (r *Registry) HandlHTTP(registryPath string) {
 	http.Handle(registryPath, r)
 	fmt.Println("rpc server: regiest path ", registryPath)
 }
